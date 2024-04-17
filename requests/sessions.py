@@ -263,8 +263,7 @@ class Session(SessionRedirectMixin):
             cookies = cookiejar_from_dict(cookies)
 
         # Merge with session cookies
-        merged_cookies = merge_cookies(
-            merge_cookies(RequestsCookieJar(), self.cookies), cookies)
+        merged_cookies = self._temp_merge_cookies(cookies)
 
         # Set environment's basic authentication if not explicitly set.
         auth = request.auth
@@ -284,6 +283,18 @@ class Session(SessionRedirectMixin):
             hooks=merge_hooks(request.hooks, self.hooks),
         )
         return p
+
+    def _temp_merge_cookies(self, request_cookies):
+        """
+        Creates a temporary merge of session cookies and request-specific cookies,
+        ensuring that the merge does not affect the session's cookies.
+        """
+        # Make a deep copy of the session cookies to prevent modification
+        temp_session_cookies = RequestsCookieJar()
+        temp_session_cookies.update(self.cookies)
+
+        # Merge with request cookies, ensuring not to modify the session cookies
+        return merge_cookies(temp_session_cookies, request_cookies)
 
     def request(self, method, url,
         params=None,
