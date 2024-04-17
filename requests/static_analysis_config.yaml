@@ -1,0 +1,8 @@
+# Configuration for static code analysis tools
+tools:
+  - name: flake8
+    options: "--exclude=venv/*,build/* --max-line-length=120"
+  - name: bandit
+    options: "-r . -x venv/,build/ --ini .bandit"
+  - name: mypy
+    options: "--ignore-missing-imports --exclude=build/*"
