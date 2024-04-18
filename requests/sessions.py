@@ -165,7 +165,8 @@ class SessionRedirectMixin(object):
                 allow_redirects=False,
             )
 
-            extract_cookies_to_jar(self.cookies, prepared_request, resp.raw)
+            # Change: Do not persist request-specific cookies across session redirects
+            # extract_cookies_to_jar(self.cookies, prepared_request, resp.raw)
 
             i += 1
             yield resp
@@ -262,9 +263,7 @@ class Session(SessionRedirectMixin):
             cookies = cookiejar_from_dict(cookies)
 
         # Merge with session cookies
-        merged_cookies = merge_cookies(
-            merge_cookies(RequestsCookieJar(), self.cookies), cookies)
-
+        merged_cookies = self._temp_merge_cookies(cookies)
 
         # Set environment's basic authentication if not explicitly set.
         auth = request.auth
@@ -280,10 +279,22 @@ class Session(SessionRedirectMixin):
             headers=merge_setting(request.headers, self.headers, dict_class=CaseInsensitiveDict),
             params=merge_setting(request.params, self.params),
             auth=merge_setting(auth, self.auth),
-            cookies=merged_cookies,
+            cookies=merged_cookies,  # Ensure cookies are only request-scoped here
             hooks=merge_hooks(request.hooks, self.hooks),
         )
         return p
+
+    def _temp_merge_cookies(self, request_cookies):
+        """
+        Creates a temporary merge of session cookies and request-specific cookies,
+        ensuring that the merge does not affect the session's cookies.
+        """
+        # Make a deep copy of the session cookies to prevent modification
+        temp_session_cookies = RequestsCookieJar()
+        temp_session_cookies.update(self.cookies)
+
+        # Merge with request cookies, ensuring not to modify the session cookies
+        return merge_cookies(temp_session_cookies, request_cookies)
 
     def request(self, method, url,
         params=None,
@@ -345,8 +356,8 @@ class Session(SessionRedirectMixin):
         )
         prep = self.prepare_request(req)
 
-        # Add param cookies to session cookies
-        self.cookies = merge_cookies(self.cookies, cookies)
+        # Ensure request cookies are not added to session cookies
+        # self.cookies = merge_cookies(self.cookies, cookies)  # Removed to prevent session persistence of request cookies
 
         proxies = proxies or {}
 
@@ -495,7 +506,10 @@ class Session(SessionRedirectMixin):
             # If the hooks create history then we want those cookies too
             for resp in r.history:
                 extract_cookies_to_jar(self.cookies, resp.request, resp.raw)
-        extract_cookies_to_jar(self.cookies, request, r.raw)
+                
+        # Change: Only extract cookies to jar from the final response in a redirect chain
+        if not r.is_redirect or not allow_redirects:
+            extract_cookies_to_jar(self.cookies, request, r.raw)
 
         # Redirect resolving generator.
         gen = self.resolve_redirects(r, request, stream=stream,
